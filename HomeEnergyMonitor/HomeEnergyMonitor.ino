@@ -51,7 +51,7 @@ RTC_Millis RTC;
 // RFM12B Settings
 //--------------------------------------------------------------------------------------------
 #define MYNODE 20            // Should be unique on network, node ID 30 reserved for base station
-#define freq RF12_433MHZ     // frequency - match to same frequency as RFM12B module (change to 868Mhz or 915Mhz if appropriate)
+#define freq RF12_868MHZ     // frequency - match to same frequency as RFM12B module (change to 868Mhz or 915Mhz if appropriate)
 #define group 210 
 
 #define ONE_WIRE_BUS 5              // temperature sensor connection - hard wired 
@@ -73,6 +73,7 @@ PayloadGLCD emonglcd;
 
 int hour = 0, minute = 0;
 double usekwh = 0;
+double yest_kwh = 0;
 
 const int greenLED=6;               // Green tri-color LED
 const int redLED=9;                 // Red tri-color LED
@@ -91,6 +92,7 @@ unsigned long last_emonbase;                   // Used to count time from last e
 void setup()
 {
   delay(500); 				   //wait for power to settle before firing up the RF
+  Serial.begin(9600);
   rf12_initialize(MYNODE, freq,group);
   delay(100);				   //wait for RF to settle befor turning on display
   glcd.begin(0x20);
@@ -113,14 +115,30 @@ void loop()
   
   if (rf12_recvDone())
   {
+    Serial.print("data received ");
     if (rf12_crc == 0 && (rf12_hdr & RF12_HDR_CTL) == 0)  // and no rf errors
     {
-      int node_id = (rf12_hdr & 0x1F);
-      if (node_id == 10) {emontx = *(PayloadTX*) rf12_data; last_emontx = millis();}  //Assuming 10 is the emonTx NodeID
+      int node_id = (rf12_hdr & 0x1F);      
+      if (node_id == 10) { // emonTx (Assuming 10 is the emonTx NodeID)
+        Serial.print("from emonTx\n");
+        emontx = *(PayloadTX*) rf12_data; 
+        last_emontx = millis();
+        if(emontx.power1 > 1000){
+          digitalWrite(redLED, HIGH);
+        }else{
+          digitalWrite(redLED, LOW);
+        }
+        if(emontx.power1 < 2000){
+          digitalWrite(greenLED, HIGH);
+        }else{
+          digitalWrite(greenLED, LOW);
+        }
+      }  
       
-      if (node_id == 15)			//Assuming 15 is the emonBase node ID
+      if (node_id == 15)	// Open Kontrol Gateway		//Assuming 15 is the emonBase node ID
       {
-        RTC.adjust(DateTime(2012, 1, 1, rf12_data[1], rf12_data[2], rf12_data[3]));
+        Serial.print("from OKG\n");
+        RTC.adjust(DateTime(2012, 1, 1, rf12_data[1] + 2, rf12_data[2], rf12_data[3]));
         last_emonbase = millis();
       } 
     }
@@ -131,6 +149,7 @@ void loop()
   //--------------------------------------------------------------------------------------------
   if ((millis()-fast_update)>200)
   {
+    Serial.print("disp upd\n");
     fast_update = millis();
     
     DateTime now = RTC.now();
@@ -138,11 +157,18 @@ void loop()
     hour = now.hour();
     minute = now.minute();
 
-    usekwh += (emontx.power1 * 0.2) / 3600000;
-    if (last_hour == 23 && hour == 00) usekwh = 0;                //reset Kwh/d counter at midnight
+    usekwh += (emontx.power1 * 0.2) / 3600000;    
+    if (last_hour == 23 && hour == 00){                           //reset Kwh/d counter at midnight
+      yest_kwh = usekwh;
+      usekwh = 0;
+    }
     cval_use = cval_use + (emontx.power1 - cval_use)*0.50;        //smooth transitions
-    
-    draw_power_page( "POWER" ,cval_use, "USE", usekwh);
+
+    if((millis() / 5000) % 2){
+      draw_power_page( "POWER NOW" ,cval_use, "USE TODAY", usekwh);
+    }else{
+      draw_power_page( "POWER NOW" ,cval_use, "USE YESTER.", yester_kwh);
+    }
     draw_temperature_time_footer(temp, mintemp, maxtemp, hour,minute);
     glcd.refresh();
 
@@ -154,15 +180,19 @@ void loop()
   
   if ((millis()-slow_update)>10000)
   {
+    Serial.print("send temp data");
     slow_update = millis();
 
     sensors.requestTemperatures();
+    Serial.print("..1..");
     temp = (sensors.getTempCByIndex(0));
     if (temp > maxtemp) maxtemp = temp;
     if (temp < mintemp) mintemp = temp;
-   
+
+    Serial.print("..2..");
     emonglcd.temperature = (int) (temp * 100);                          // set emonglcd payload
     rf12_sendNow(0, &emonglcd, sizeof emonglcd);                     //send temperature data via RFM12B using new rf12_sendNow wrapper -glynhudson
     rf12_sendWait(2);    
+    Serial.print("..5..\n");
   }
 }
