@@ -168,7 +168,7 @@ void loop()
     if((millis() / 5000) % 2){
       draw_power_page( "POWER NOW" ,cval_use, "USE TODAY", usekwh);
     }else{
-      draw_power_page( "POWER NOW" ,cval_use, "USE YESTER.", yester_kwh);
+      draw_power_page( "POWER NOW" ,cval_use, "USE YESTER.", yest_kwh);
     }
     draw_temperature_time_footer(temp, mintemp, maxtemp, hour,minute);
     glcd.refresh();

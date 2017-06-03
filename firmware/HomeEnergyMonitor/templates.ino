@@ -14,11 +14,9 @@ void draw_power_page(char* powerstr, double powerval, char* energystr,  double e
   
   char str[50];    			 //variable to store conversion 
   glcd.setFont(font_clR6x8);      
-  strcpy(str,powerstr);  
-  strcat(str," NOW:"); 
+  strcpy(str,powerstr);    
   glcd.drawString(0,0,str);
   strcpy(str,energystr);  
-  strcat(str," TODAY:"); 
   glcd.drawString(0,38,str);
 
   // power value
